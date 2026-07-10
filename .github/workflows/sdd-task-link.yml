@@ -1,0 +1,74 @@
+# SDD task-link check (SDD_PLAN.md §10, stage 1) — mechanical, no LLM.
+#
+# Every PR to main must reference an OPEN issue in the same repo — a minimal
+# stub issue is fine. Applies uniformly to spec repos and code repos; make
+# this job a required status check in branch protection (see
+# github/README.md for the exact check name to require).
+#
+# Accepted reference forms, in PR title or body:
+#   Refs #N / Closes #N / Fixes #N / Resolves #N   (and inflections)
+#   full issue URL: https://github.com/<owner>/<repo>/issues/N
+# or a head branch named spec/N.
+#
+# Self-contained: host in a shared org actions repo (workflow_call) or copy
+# directly into .github/workflows/.
+
+name: sdd-task-link
+
+on:
+  workflow_call: {}
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  sdd-task-link:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a linked open issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed('sdd-task-link must run on pull_request events (directly or via workflow_call from a pull_request-triggered caller).');
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const text = `${pr.title}\n${pr.body || ''}`;
+
+            const candidates = new Set();
+            for (const m of text.matchAll(/\b(?:ref|refs|close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[\s:]+#(\d+)/gi)) {
+              candidates.add(+m[1]);
+            }
+            for (const m of text.matchAll(new RegExp(`github\\.com/${esc(owner)}/${esc(repo)}/issues/(\\d+)`, 'gi'))) {
+              candidates.add(+m[1]);
+            }
+            const branch = (pr.head && pr.head.ref) || '';
+            const bm = branch.match(/^spec\/(\d+)$/);
+            if (bm) candidates.add(+bm[1]);
+
+            const rejected = [];
+            for (const n of candidates) {
+              try {
+                const { data: issue } = await github.rest.issues.get({ owner, repo, issue_number: n });
+                if (issue.pull_request) { rejected.push(`#${n} is a pull request, not an issue`); continue; }
+                if (issue.state !== 'open') { rejected.push(`#${n} is closed — link an open issue`); continue; }
+                core.notice(`Linked issue: #${n} — ${issue.title}`);
+                return;
+              } catch {
+                rejected.push(`#${n} does not exist`);
+              }
+            }
+
+            core.setFailed([
+              'No linked open issue found. Under SDD every PR to main needs an issue in this repo — a minimal stub issue is fine.',
+              '',
+              'Fix: create an issue if you do not have one, then add `Refs #<n>` (umbrella issue that should stay open) or `Closes #<n>` (task closed by this PR) to the PR description.',
+              rejected.length ? `References found but rejected: ${rejected.join('; ')}` : 'No issue references found in the PR title, body, or branch name.',
+            ].join('\n'));
