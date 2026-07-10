@@ -1,9 +1,8 @@
-# SDD task-link check (SDD_PLAN.md §10, stage 1) — mechanical, no LLM.
+# SDD task-link check — mechanical, no LLM.
 #
 # Every PR to main must reference an OPEN issue in the same repo — a minimal
 # stub issue is fine. Applies uniformly to spec repos and code repos; make
-# this job a required status check in branch protection (see
-# github/README.md for the exact check name to require).
+# this job a required status check in branch protection.
 #
 # Accepted reference forms, in PR title or body:
 #   Refs #N / Closes #N / Fixes #N / Resolves #N   (and inflections)

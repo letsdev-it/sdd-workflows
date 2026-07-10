@@ -1,28 +1,16 @@
 # sdd-workflows
 
-Reusable GitHub workflows of the SDD machinery (spec-driven development,
-see `letsdev-it/sdd-specs` → `SDD_PLAN.md` — private) — the three that
-CODE repos call on their own events:
+Reusable GitHub workflows for spec-driven development.
 
 | Workflow | Called on | Does |
 |---|---|---|
-| `sdd-task-link.yml` | `pull_request` | stage-1 linkage: every PR must reference an open issue in the same repo |
-| `sdd-conformance.yml` | `pull_request` | stage-2: LLM judges the diff against the CURRENT product spec (conforms / beyond_spec / against_spec) + non-blocking tech-spec advisory |
-| `sdd-task-done.yml` | `issues: [closed]` | umbrella bookkeeping: comments on the spec-repo umbrella, closes it after the project's last open task, propagating the close reason |
+| `sdd-task-link.yml` | `pull_request` | every PR must reference an open issue in the same repo |
+| `sdd-conformance.yml` | `pull_request` | LLM judges the diff against the project's product spec: `conforms` / `beyond_spec` / `against_spec` (the last two fail), plus a non-blocking tech-spec advisory |
+| `sdd-task-done.yml` | `issues: [closed]` | when a generated task closes, comments on its umbrella issue in the spec repo and closes the umbrella after the last open task, propagating the close reason |
 
-## Why a separate public repo
+## Usage
 
-GitHub does not let a **public** repo call reusable workflows hosted in a
-**private** one (`access_level: organization` covers private repos only).
-The rest of the machinery lives in the private spec repo and operates on
-it directly; these three run in code repos — public ones included — so
-they live here. They contain no secrets: callers pass credentials
-(`secrets: inherit`), and the runtime reads the private spec repo via the
-org GitHub App token, which works fine from a public caller.
-
-## Wiring a code repo
-
-`.github/workflows/sdd.yml`:
+`.github/workflows/sdd.yml` in the calling repo:
 
 ```yaml
 name: SDD
@@ -48,7 +36,8 @@ jobs:
     permissions: { contents: read, issues: read }
 ```
 
-Plus per repo: `SDD_APP_ID` (variable), `SDD_APP_PRIVATE_KEY` and
-`SDD_LLM_API_KEY` (secrets), the org App installed, labels via the spec
-repo's `sdd-repo-setup.yml`. Full ops docs: `sdd-specs/.github/README.md`
-(private).
+Configuration in the calling repo: `SDD_APP_ID` (variable),
+`SDD_APP_PRIVATE_KEY` and `SDD_LLM_API_KEY` (secrets). Conformance and
+task-done read the spec repo cross-repo, so the default workflow token is
+not enough. The spec repo is set by the `spec_repo` input of conformance
+and task-done.

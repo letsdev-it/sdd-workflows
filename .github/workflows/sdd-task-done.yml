@@ -1,4 +1,4 @@
-# SDD task-done propagation (SDD_PLAN.md §11) — reusable, for CODE repos.
+# SDD task-done propagation — reusable, for code repos.
 #
 # Called on `issues: [closed]`. When a generated task (label `sdd:task`)
 # closes — normally via `Closes #N` on the merged code PR — this workflow:
