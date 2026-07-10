@@ -22,9 +22,10 @@ on:
   workflow_call:
     inputs:
       spec_repo:
-        description: The spec repo (owner/name) holding zoltan.json manifests
+        description: >-
+          The spec repo (owner/name) holding zoltan.json manifests.
+          Defaults to the caller's SDD_SPEC_REPO repository variable.
         type: string
-        default: letsdev-it/sdd-specs
     secrets:
       SDD_TASKS_TOKEN:
         required: false
@@ -35,6 +36,12 @@ jobs:
   sdd-task-done:
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve spec repo
+        if: (inputs.spec_repo || vars.SDD_SPEC_REPO) == ''
+        run: |
+          echo "::error::Set the SDD_SPEC_REPO repository variable (owner/name of the spec repo) or pass the spec_repo input."
+          exit 1
+
       - name: Mint GitHub App token
         id: app
         if: vars.SDD_APP_ID != ''
@@ -47,14 +54,14 @@ jobs:
       - name: Checkout spec repo
         uses: actions/checkout@v4
         with:
-          repository: ${{ inputs.spec_repo }}
+          repository: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
           token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
           path: spec-repo
 
       - name: Propagate completion to the umbrella issue
         uses: actions/github-script@v7
         env:
-          SPEC_REPO: ${{ inputs.spec_repo }}
+          SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
         with:
           github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
           script: |

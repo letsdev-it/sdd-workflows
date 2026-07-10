@@ -36,8 +36,14 @@ jobs:
     permissions: { contents: read, issues: read }
 ```
 
-Configuration in the calling repo: `SDD_APP_ID` (variable),
-`SDD_APP_PRIVATE_KEY` and `SDD_LLM_API_KEY` (secrets). Conformance and
-task-done read the spec repo cross-repo, so the default workflow token is
-not enough. The spec repo is set by the `spec_repo` input of conformance
-and task-done.
+Configuration in the calling repo:
+
+| Kind | Name | Meaning |
+|---|---|---|
+| variable | `SDD_SPEC_REPO` | spec repo (`owner/name`) — used by conformance and task-done; can also be passed as the `spec_repo` input |
+| variable | `SDD_APP_ID` | GitHub App id used to mint the cross-repo token (optional; falls back to `SDD_TASKS_TOKEN`) |
+| secret | `SDD_APP_PRIVATE_KEY` | the App's private key |
+| secret | `SDD_LLM_API_KEY` | key for the OpenAI-compatible endpoint used by conformance |
+
+Conformance and task-done read the spec repo cross-repo, so the default
+workflow token is not enough.
