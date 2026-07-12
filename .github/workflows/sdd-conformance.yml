@@ -78,7 +78,10 @@ jobs:
           LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-4.5' }}
           LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
         with:
-          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+          # The App/PAT is only for checking out the private spec repo above.
+          # Local PR/issues/status APIs must use the caller token so its
+          # job-scoped `statuses: write` permission is honored.
+          github-token: ${{ github.token }}
 
   sdd-task-fulfillment:
     permissions:
@@ -117,4 +120,4 @@ jobs:
           LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-4.5' }}
           LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
         with:
-          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+          github-token: ${{ github.token }}

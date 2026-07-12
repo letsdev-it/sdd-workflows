@@ -50,3 +50,4 @@ jobs:
           SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
         with:
           github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+          code-token: ${{ github.token }}
