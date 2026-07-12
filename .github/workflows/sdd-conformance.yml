@@ -1,8 +1,9 @@
 # SDD conformance check — reusable, for code repos.
 #
 # Green light for merge = the PR does not take the code beyond or against
-# the project's PRODUCT SPEC (spec repo). The CURRENT spec is the
-# authorization — in SDD the spec changes before code, so legitimate
+# the project's PRODUCT SPEC (the spec/ role in the spec repo). The CURRENT
+# spec is the authorization — context/, backlog/, and decisions/ are
+# explicitly non-binding. In SDD the spec changes before code, so legitimate
 # contract work is, by construction, already described by the spec at
 # code-PR time; no link metadata is required (provenance is reported as
 # context only). Verdict:
@@ -95,7 +96,15 @@ jobs:
               try {
                 const manifest = JSON.parse(fs.readFileSync(path.join('spec-repo', mp), 'utf8'));
                 if ((manifest.repos || []).some((r) => slugOf(r.url) === `${owner}/${repo}`.toLowerCase())) {
-                  project = { dir: path.dirname(mp), name: manifest.name || path.dirname(mp) };
+                  const projectDir = path.dirname(mp);
+                  const roleSpecDir = projectDir === '.' ? 'spec' : `${projectDir}/spec`;
+                  const structured = fs.existsSync(path.join('spec-repo', roleSpecDir));
+                  project = {
+                    dir: projectDir,
+                    specDir: structured ? roleSpecDir : projectDir,
+                    name: manifest.name || projectDir,
+                    structured,
+                  };
                   break;
                 }
               } catch { /* ignore */ }
@@ -106,11 +115,16 @@ jobs:
             }
             if (!process.env.LLM_API_KEY) { core.setFailed('secrets.SDD_LLM_API_KEY is not set in this repo.'); return; }
 
-            // ---------- product spec content ----------
+            // ---------- authoritative product spec content ----------
+            // Structured projects authorize code from spec/ only. The root
+            // fallback keeps legacy flat projects working until migration.
             let spec = '';
-            for (const f of git('ls-files', '--', project.dir === '.' ? '.' : project.dir).split('\n').filter(Boolean)) {
+            for (const f of git('ls-files', '--', project.specDir).split('\n').filter(Boolean)) {
+              if (path.basename(f).startsWith('.') || path.basename(f) === 'zoltan.json') continue;
+              const content = fs.readFileSync(path.join('spec-repo', f));
+              if (content.includes(0)) continue;
               if (spec.length > 60000) { spec += '\n… [more files omitted]\n'; break; }
-              spec += `\n===== ${f} =====\n${clip(fs.readFileSync(path.join('spec-repo', f), 'utf8'), 20000)}\n`;
+              spec += `\n===== ${f} =====\n${clip(content.toString('utf8'), 20000)}\n`;
             }
 
             // ---------- PR diff + files ----------
@@ -138,7 +152,7 @@ jobs:
               body: JSON.stringify({ model: process.env.LLM_MODEL, temperature: 0, messages: [
                 { role: 'system', content: [
                   'You are the spec-conformance judge of an SDD (spec-driven development) pipeline.',
-                  'The PRODUCT SPEC below is the confirmed contract (the TARGET STATE) of the system. In SDD the spec changes BEFORE code, so the current spec is the sole authorization for contract work. Judge the pull-request diff of ONE code repository against it.',
+                  'The PRODUCT SPEC below is the confirmed contract (the TARGET STATE) of the system. In a structured project it comes only from spec/; context/, backlog/, and decisions/ are non-binding and are deliberately absent. In SDD the spec changes BEFORE code, so the current spec is the sole authorization for contract work. Judge the pull-request diff of ONE code repository against it.',
                   'Classify the diff into exactly one verdict:',
                   '- "conforms" — it does not affect externally-observable behavior (refactors, tests, tooling, tech-spec/docs), OR it implements / moves the code toward behavior the current spec describes. Implementing missing specified functionality from scratch conforms.',
                   '- "beyond_spec" — it introduces or alters externally-observable behavior that the current spec does NOT describe (an unspecified feature or contract change).',
@@ -176,7 +190,7 @@ jobs:
             if (verdict.verdict === 'beyond_spec') {
               core.setFailed(`This PR introduces externally-observable behavior the product spec does not describe. Route the contract change through ${specRepo} (issue → spec PR → merge → generated task), or drop the unspecified behavior. ${verdict.explanation || ''}`);
             } else if (verdict.verdict === 'against_spec') {
-              core.setFailed(`This PR results in behavior contradicting the CURRENT product spec${provenance ? ` (provenance: ${provenance} — the spec may have moved on since)` : ''}. Check the latest spec state in ${specRepo}/${project.dir}. ${verdict.explanation || ''}`);
+              core.setFailed(`This PR results in behavior contradicting the CURRENT product spec${provenance ? ` (provenance: ${provenance} — the spec may have moved on since)` : ''}. Check the latest spec state in ${specRepo}/${project.specDir}. ${verdict.explanation || ''}`);
             } else {
               core.notice(`Conformance OK${provenance ? ` (${provenance})` : ''}.`);
             }
