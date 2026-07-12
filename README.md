@@ -8,6 +8,11 @@ Reusable GitHub workflows for spec-driven development.
 | `sdd-conformance.yml` | `pull_request` | LLM judges the diff against the project's authoritative `spec/` contract: `conforms` / `beyond_spec` / `against_spec` (the last two fail), plus a non-blocking tech-spec advisory; legacy flat projects fall back to their root |
 | `sdd-task-done.yml` | `issues: [closed]` | when a generated task closes, comments on its umbrella issue in the spec repo and closes the umbrella after the last open task, propagating the close reason |
 
+Reusable workflow YAML stays declarative. Executable logic and prompts live in
+versioned composite actions under `actions/`; this matters because a relative
+path in a reusable workflow can otherwise resolve against the calling
+repository rather than this workflow repository.
+
 ## Usage
 
 `.github/workflows/sdd.yml` in the calling repo:
