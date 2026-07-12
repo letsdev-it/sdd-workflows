@@ -39,7 +39,8 @@ module.exports = async ({ github, context, core }) => {
   const res = await fetch(`${(process.env.LLM_BASE_URL || '').replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.LLM_API_KEY}` },
-    body: JSON.stringify({ model: process.env.LLM_MODEL, temperature: 0, messages: [
+    body: JSON.stringify({ model: process.env.LLM_MODEL, temperature: 0,
+      response_format: { type: 'json_object' }, messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: [
         `PRODUCT SPEC (project: ${project.name}, tree: ${project.treeSha}):`, project.spec || '(empty)',
