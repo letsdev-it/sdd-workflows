@@ -1,0 +1,16 @@
+name: SDD authorized task completion
+description: Propagate only task closures backed by a validated merged PR or approved supersede
+inputs:
+  github-token:
+    description: Cross-repository token used for evidence validation and umbrella updates
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Validate and propagate task terminal state
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const run = require('${{ github.action_path }}/task-done.js');
+          await run({ github, context, core });

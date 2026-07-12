@@ -8,9 +8,9 @@ Executable logic and prompts travel in versioned composite actions under
 |---|---|---|
 | `sdd-task-link.yml` | `pull_request` | requires an open local issue link |
 | `sdd-conformance.yml` | `pull_request` | runs separate conformance and task-fulfillment checks; writes freshness success |
-| `sdd-invalidate.yml` | `repository_dispatch: sdd-spec-changed` | marks freshness error on every open PR |
+| `sdd-invalidate.yml` | `repository_dispatch: sdd-spec-changed` | marks freshness error and automatically reruns each open PR's latest pull-request workflow |
 | `sdd-clarification.yml` | `issue_comment` | forwards `/sdd clarify ...` and blocks the task |
-| `sdd-task-done.yml` | `issues: closed` | propagates completion to the umbrella |
+| `sdd-task-done.yml` | `issues: closed` | accepts only a validated merged PR or approved supersede; reopens unauthorized closure |
 | `sdd-drift-audit.yml` | schedule/manual | audits code vs binding `spec/` and creates deduplicated intake |
 
 Conformance, task fulfillment, and drift load only the matched project's
@@ -49,7 +49,7 @@ jobs:
   invalidate:
     if: github.event_name == 'repository_dispatch'
     uses: letsdev-it/sdd-workflows/.github/workflows/sdd-invalidate.yml@main
-    permissions: { pull-requests: read, statuses: write }
+    permissions: { actions: write, pull-requests: read, statuses: write }
   clarification:
     if: github.event_name == 'issue_comment'
     uses: letsdev-it/sdd-workflows/.github/workflows/sdd-clarification.yml@main
@@ -59,7 +59,7 @@ jobs:
     if: github.event_name == 'issues'
     uses: letsdev-it/sdd-workflows/.github/workflows/sdd-task-done.yml@main
     secrets: inherit
-    permissions: { contents: read, issues: read }
+    permissions: { checks: read, contents: read, issues: write, pull-requests: read, statuses: read }
   drift-audit:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     uses: letsdev-it/sdd-workflows/.github/workflows/sdd-drift-audit.yml@main
@@ -81,8 +81,16 @@ jobs:
 
 Require `sdd-task-link`, `sdd-conformance`, `sdd-task-fulfillment`, and
 `sdd-spec-freshness` on the protected branch. A spec change makes freshness
-red for existing PRs; rerunning code review against the current spec restores
-it.
+red for existing PRs and immediately queues a rerun of their latest completed
+pull-request workflow. Successful review against current `spec/` restores it;
+if no prior run can be rerun, the PR stays red and the invalidation job fails
+closed with an actionable message.
+
+Board fields, labels, and manual issue closure are not completion authority. An
+`sdd:task` is terminal only when GitHub records a merged PR linking it and all
+four required checks were successful, or when an accepted spec impact plan
+contains the matching `supersede` operation. Any other closure is automatically
+reopened and cannot close the umbrella.
 
 The implementation executor is deliberately outside this repository. These
 workflows consume and produce only GitHub-native tasks, comments, PR checks,
