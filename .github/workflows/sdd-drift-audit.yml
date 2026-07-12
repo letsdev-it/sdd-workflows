@@ -1,0 +1,53 @@
+name: sdd-drift-audit
+
+on:
+  workflow_call:
+    inputs:
+      spec_repo:
+        description: Spec repo owner/name; defaults to SDD_SPEC_REPO
+        type: string
+    secrets:
+      SDD_TASKS_TOKEN:
+        required: false
+      SDD_APP_PRIVATE_KEY:
+        required: false
+      SDD_LLM_API_KEY:
+        required: false
+
+jobs:
+  audit:
+    permissions:
+      contents: read
+      issues: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token
+        id: app
+        if: vars.SDD_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SDD_APP_ID }}
+          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout code repo
+        uses: actions/checkout@v4
+        with:
+          path: code-repo
+
+      - name: Checkout spec repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+          path: spec-repo
+
+      - name: Audit code against authoritative spec
+        uses: letsdev-it/sdd-workflows/actions/sdd-drift-audit@main
+        env:
+          SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-4.5' }}
+          LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
+        with:
+          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
