@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const invalidate = require('../actions/sdd-invalidate/invalidate');
-const { selectPullRequestRun } = invalidate;
+const { selectPullRequestRun, selectSddPullRequestRun } = invalidate;
 
 test('selects the newest completed pull-request run for the exact PR', () => {
   const selected = selectPullRequestRun([
@@ -19,6 +19,20 @@ test('returns null when no completed PR run can be rerun', () => {
   ], 7), null);
 });
 
+test('selects only a workflow run containing both semantic SDD jobs', async () => {
+  const github = {
+    paginate: async (method, args) => method(args),
+    rest: { actions: { listJobsForWorkflowRun: async ({ run_id: id }) => id === 2
+      ? [{ name: 'code-review / sdd-conformance' }, { name: 'code-review / sdd-task-fulfillment' }]
+      : [{ name: 'lint' }] } },
+  };
+  const runs = [
+    { id: 1, event: 'pull_request', status: 'completed', updated_at: '2026-01-02', pull_requests: [{ number: 7 }] },
+    { id: 2, event: 'pull_request', status: 'completed', updated_at: '2026-01-01', pull_requests: [{ number: 7 }] },
+  ];
+  assert.equal((await selectSddPullRequestRun(github, 'org', 'repo', runs, 7)).id, 2);
+});
+
 test('invalidates first and queues the original pull-request workflow', async () => {
   const calls = [];
   const github = {
@@ -31,6 +45,10 @@ test('invalidates first and queues the original pull-request workflow', async ()
           id: 42, event: 'pull_request', status: 'completed', updated_at: '2026-01-01',
           pull_requests: [{ number: 7 }],
         }],
+        listJobsForWorkflowRun: async () => [
+          { name: 'code-review / sdd-conformance' },
+          { name: 'code-review / sdd-task-fulfillment' },
+        ],
         reRunWorkflow: async (args) => calls.push(['rerun', args.run_id]),
       },
     },
