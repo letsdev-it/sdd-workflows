@@ -2,13 +2,27 @@ name: SDD authorized task completion
 description: Propagate only task closures backed by a validated merged PR or approved supersede
 inputs:
   github-token:
-    description: Cross-repository token used for evidence validation and umbrella updates
+    description: Cross-repository token used for spec evidence and umbrella updates
+    required: true
+  code-token:
+    description: Caller repository token used for local check and status evidence
     required: true
 runs:
   using: composite
   steps:
+    - name: Validate local merged-PR evidence
+      id: local
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.code-token }}
+        script: |
+          const preflight = require('${{ github.action_path }}/preflight.js');
+          await preflight({ github, context, core });
+
     - name: Validate and propagate task terminal state
       uses: actions/github-script@v7
+      env:
+        LOCAL_AUTHORIZATION: ${{ steps.local.outputs.authorization }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |

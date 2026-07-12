@@ -119,7 +119,10 @@ module.exports = async ({ github, context, core }) => {
     return;
   }
 
-  const authorization = await authorizeTerminal({ github, owner, repo, task, specOwner, specRepo });
+  let localAuthorization = null;
+  try { localAuthorization = JSON.parse(process.env.LOCAL_AUTHORIZATION || 'null'); } catch { /* fail below */ }
+  const authorization = localAuthorization
+    || await authorizeTerminal({ github, owner, repo, task, specOwner, specRepo });
   if (!authorization) {
     await github.rest.issues.update({ owner, repo, issue_number: task.number, state: 'open' });
     await github.rest.issues.createComment({ owner, repo, issue_number: task.number, body: [
@@ -202,3 +205,4 @@ module.exports.extractPlan = extractPlan;
 module.exports.authorizeTerminal = authorizeTerminal;
 module.exports.latestCheckSucceeded = latestCheckSucceeded;
 module.exports.latestStatusSucceeded = latestStatusSucceeded;
+module.exports.validatedMergedPullRequest = validatedMergedPullRequest;
