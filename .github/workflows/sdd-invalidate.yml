@@ -1,0 +1,41 @@
+name: sdd-invalidate
+
+on:
+  workflow_call:
+    inputs:
+      spec_repo:
+        description: Spec repo owner/name; defaults to SDD_SPEC_REPO
+        type: string
+
+jobs:
+  invalidate:
+    permissions:
+      pull-requests: read
+      statuses: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Invalidate open PRs after a product-spec change
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+        with:
+          script: |
+            const payload = context.payload.client_payload || {};
+            if (context.eventName !== 'repository_dispatch' || context.payload.action !== 'sdd-spec-changed') {
+              core.setFailed('sdd-invalidate must be called for repository_dispatch type sdd-spec-changed.');
+              return;
+            }
+            if (!process.env.EXPECTED_SPEC_REPO || payload.spec_repo !== process.env.EXPECTED_SPEC_REPO) {
+              core.setFailed(`Rejected spec-change event from ${payload.spec_repo || '(missing)'}.`);
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const prs = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
+            for (const pr of prs) {
+              await github.rest.repos.createCommitStatus({
+                owner, repo, sha: pr.head.sha, state: 'error', context: 'sdd-spec-freshness',
+                description: `Spec changed to ${String(payload.spec_tree_sha || payload.spec_commit || '').slice(0, 12)}; rerun SDD checks`,
+                target_url: payload.spec_commit_url || undefined,
+              });
+            }
+            core.notice(`Invalidated ${prs.length} open PR(s) after spec change ${payload.spec_commit || ''}.`);

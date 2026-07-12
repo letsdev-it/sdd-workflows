@@ -1,21 +1,25 @@
 # sdd-workflows
 
-Reusable GitHub workflows for spec-driven development.
+Public reusable GitHub workflows for the code-repository side of SDD.
+Executable logic and prompts travel in versioned composite actions under
+`actions/`; reusable YAML remains declarative.
 
-| Workflow | Called on | Does |
+| Workflow | Event in caller | Result |
 |---|---|---|
-| `sdd-task-link.yml` | `pull_request` | every PR must reference an open issue in the same repo |
-| `sdd-conformance.yml` | `pull_request` | LLM judges the diff against the project's authoritative `spec/` contract: `conforms` / `beyond_spec` / `against_spec` (the last two fail), plus a non-blocking tech-spec advisory; legacy flat projects fall back to their root |
-| `sdd-task-done.yml` | `issues: [closed]` | when a generated task closes, comments on its umbrella issue in the spec repo and closes the umbrella after the last open task, propagating the close reason |
+| `sdd-task-link.yml` | `pull_request` | requires an open local issue link |
+| `sdd-conformance.yml` | `pull_request` | runs separate conformance and task-fulfillment checks; writes freshness success |
+| `sdd-invalidate.yml` | `repository_dispatch: sdd-spec-changed` | marks freshness error on every open PR |
+| `sdd-clarification.yml` | `issue_comment` | forwards `/sdd clarify ...` and blocks the task |
+| `sdd-task-done.yml` | `issues: closed` | propagates completion to the umbrella |
+| `sdd-drift-audit.yml` | schedule/manual | audits code vs binding `spec/` and creates deduplicated intake |
 
-Reusable workflow YAML stays declarative. Executable logic and prompts live in
-versioned composite actions under `actions/`; this matters because a relative
-path in a reusable workflow can otherwise resolve against the calling
-repository rather than this workflow repository.
+Conformance, task fulfillment, and drift load only the matched project's
+binding `spec/`. Supporting `context/`, `backlog/`, and `decisions/` are not
+authorization. A temporary flat-project fallback supports migration.
 
-## Usage
+## Caller
 
-`.github/workflows/sdd.yml` in the calling repo:
+Install this as `.github/workflows/sdd.yml` in each code repository:
 
 ```yaml
 name: SDD
@@ -24,31 +28,62 @@ on:
     types: [opened, edited, reopened, synchronize]
   issues:
     types: [closed]
+  issue_comment:
+    types: [created]
+  repository_dispatch:
+    types: [sdd-spec-changed]
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
 jobs:
   task-link:
     if: github.event_name == 'pull_request'
     uses: letsdev-it/sdd-workflows/.github/workflows/sdd-task-link.yml@main
     permissions: { contents: read, issues: read, pull-requests: read }
-  conformance:
+  code-review:
     if: github.event_name == 'pull_request'
     uses: letsdev-it/sdd-workflows/.github/workflows/sdd-conformance.yml@main
     secrets: inherit
-    permissions: { contents: read, issues: read, pull-requests: read }
+    permissions: { contents: read, issues: read, pull-requests: read, statuses: write }
+  invalidate:
+    if: github.event_name == 'repository_dispatch'
+    uses: letsdev-it/sdd-workflows/.github/workflows/sdd-invalidate.yml@main
+    permissions: { pull-requests: read, statuses: write }
+  clarification:
+    if: github.event_name == 'issue_comment'
+    uses: letsdev-it/sdd-workflows/.github/workflows/sdd-clarification.yml@main
+    secrets: inherit
+    permissions: { contents: read, issues: write }
   task-done:
     if: github.event_name == 'issues'
     uses: letsdev-it/sdd-workflows/.github/workflows/sdd-task-done.yml@main
     secrets: inherit
     permissions: { contents: read, issues: read }
+  drift-audit:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: letsdev-it/sdd-workflows/.github/workflows/sdd-drift-audit.yml@main
+    secrets: inherit
+    permissions: { contents: read, issues: read }
 ```
 
-Configuration in the calling repo:
+## Configuration
 
 | Kind | Name | Meaning |
 |---|---|---|
-| variable | `SDD_SPEC_REPO` | spec repo (`owner/name`) — used by conformance and task-done; can also be passed as the `spec_repo` input |
-| variable | `SDD_APP_ID` | GitHub App id used to mint the cross-repo token (optional; falls back to `SDD_TASKS_TOKEN`) |
-| secret | `SDD_APP_PRIVATE_KEY` | the App's private key |
-| secret | `SDD_LLM_API_KEY` | key for the OpenAI-compatible endpoint used by conformance |
+| variable | `SDD_SPEC_REPO` | authoritative spec repository, `owner/name` |
+| variable | `SDD_APP_ID` | GitHub App id for cross-repository access |
+| optional variable | `SDD_LLM_BASE_URL` | OpenAI-compatible endpoint |
+| optional variable | `SDD_LLM_MODEL` | semantic model |
+| secret | `SDD_APP_PRIVATE_KEY` | App private key |
+| secret | `SDD_LLM_API_KEY` | conformance, fulfillment, and drift |
+| optional secret | `SDD_TASKS_TOKEN` | PAT fallback |
 
-Conformance and task-done read the spec repo cross-repo, so the default
-workflow token is not enough.
+Require `sdd-task-link`, `sdd-conformance`, `sdd-task-fulfillment`, and
+`sdd-spec-freshness` on the protected branch. A spec change makes freshness
+red for existing PRs; rerunning code review against the current spec restores
+it.
+
+The implementation executor is deliberately outside this repository. These
+workflows consume and produce only GitHub-native tasks, comments, PR checks,
+and intake issues; they do not generate code.

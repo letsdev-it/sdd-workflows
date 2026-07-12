@@ -41,6 +41,11 @@ on:
 
 jobs:
   sdd-conformance:
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      statuses: write
     runs-on: ubuntu-latest
     steps:
       - name: Resolve spec repo
@@ -67,6 +72,45 @@ jobs:
 
       - name: Judge conformance against the product spec
         uses: letsdev-it/sdd-workflows/actions/sdd-conformance@main
+        env:
+          SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-4.5' }}
+          LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
+        with:
+          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+
+  sdd-task-fulfillment:
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve spec repo
+        if: (inputs.spec_repo || vars.SDD_SPEC_REPO) == ''
+        run: |
+          echo "::error::Set the SDD_SPEC_REPO repository variable (owner/name of the spec repo) or pass the spec_repo input."
+          exit 1
+
+      - name: Mint GitHub App token
+        id: app
+        if: vars.SDD_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SDD_APP_ID }}
+          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout spec repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+          path: spec-repo
+
+      - name: Judge fulfillment of linked SDD tasks
+        uses: letsdev-it/sdd-workflows/actions/sdd-task-fulfillment@main
         env:
           SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
           LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
