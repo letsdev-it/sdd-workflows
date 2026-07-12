@@ -5,7 +5,7 @@ Reusable GitHub workflows for spec-driven development.
 | Workflow | Called on | Does |
 |---|---|---|
 | `sdd-task-link.yml` | `pull_request` | every PR must reference an open issue in the same repo |
-| `sdd-conformance.yml` | `pull_request` | LLM judges the diff against the project's product spec: `conforms` / `beyond_spec` / `against_spec` (the last two fail), plus a non-blocking tech-spec advisory |
+| `sdd-conformance.yml` | `pull_request` | LLM judges the diff against the project's authoritative `spec/` contract: `conforms` / `beyond_spec` / `against_spec` (the last two fail), plus a non-blocking tech-spec advisory; legacy flat projects fall back to their root |
 | `sdd-task-done.yml` | `issues: [closed]` | when a generated task closes, comments on its umbrella issue in the spec repo and closes the umbrella after the last open task, propagating the close reason |
 
 ## Usage
