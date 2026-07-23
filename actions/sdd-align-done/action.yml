@@ -1,0 +1,19 @@
+name: SDD alignment completion
+description: Close the alignment task and its umbrella issues once the watermark reaches the target
+inputs:
+  github-token:
+    description: >-
+      Token that can write issues in BOTH this repo and the spec repo. Closing
+      an umbrella is the one write that crosses the boundary, so the caller's
+      job token is not enough here — this needs the App or PAT identity.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Close what the watermark has caught up with
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const run = require('${{ github.action_path }}/align-done.js');
+          await run({ github, context, core });

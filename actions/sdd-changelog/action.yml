@@ -1,0 +1,16 @@
+name: SDD changelog implementation
+description: Publish one changelog entry per spec commit and push it back to main
+inputs:
+  github-token:
+    description: Token that can read pull requests in this repo
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Publish changelog entries
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const run = require('${{ github.action_path }}/changelog.js');
+          await run({ github, context, core });

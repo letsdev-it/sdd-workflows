@@ -1,0 +1,54 @@
+# SDD spec review — reusable, for SPEC repos. Blocking quality gate on spec PRs.
+#
+# Judges the PROPOSED contract: ambiguity, contradiction, missing decisions,
+# unverifiable requirements, decisions accepted outside spec/ but not reflected
+# in it. Blocking findings fail the check; the owner merges.
+#
+# It does not plan delivery. Planning required reading code repositories, and
+# the spec repo may not do that; alignment is decided by each code repo from
+# the published changelog instead.
+
+name: sdd-spec-review
+
+on:
+  workflow_call:
+    secrets:
+      SDD_TASKS_TOKEN:
+        required: false
+      SDD_APP_PRIVATE_KEY:
+        required: false
+      SDD_LLM_API_KEY:
+        required: false
+
+jobs:
+  spec-review:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token
+        id: app
+        if: vars.SDD_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SDD_APP_ID }}
+          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Checkout the spec repo at the PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+
+      - name: Review the proposed contract
+        uses: letsdev-it/sdd-workflows/actions/sdd-spec-review@main
+        env:
+          LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-5' }}
+          LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
+        with:
+          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}

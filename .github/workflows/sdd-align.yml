@@ -1,0 +1,98 @@
+# SDD alignment — reusable, for code repos. The pull side of SDD.
+#
+# The spec repo publishes a changelog and dispatches nothing; this job is what
+# turns a spec change into work. It compares this repo's watermark
+# (.sdd/spec-offset — the spec commit it is aligned to) with the published head
+# of its project's spec and, when they differ, files ONE goal-shaped task.
+#
+# The task states WHERE THE CODE MUST END UP. It never decomposes the work:
+# whoever picks it up reads the code, which every component producing the task
+# is blind to by design.
+#
+# When the watermark matches, the job exits before calling the model. That is
+# the common case, so a daily schedule costs two checkouts a day.
+#
+# Note on scheduling: GitHub disables scheduled workflows in repositories with
+# no activity for 60 days — exactly the quiet repo where drift goes unnoticed.
+# Silence is therefore NOT proof of alignment; only watermark surveillance from
+# outside can tell the two apart.
+
+name: sdd-align
+
+on:
+  workflow_call:
+    inputs:
+      spec_repo:
+        description: Spec repo owner/name; defaults to SDD_SPEC_REPO
+        type: string
+      project:
+        description: Project directory in the spec repo; defaults to SDD_SPEC_PROJECT
+        type: string
+      offset_file:
+        description: Path to the watermark file in this repo
+        type: string
+        default: .sdd/spec-offset
+      dry_run:
+        description: Report what would be filed; write nothing
+        type: boolean
+        default: false
+    secrets:
+      SDD_TASKS_TOKEN:
+        required: false
+      SDD_APP_PRIVATE_KEY:
+        required: false
+      SDD_LLM_API_KEY:
+        required: false
+
+jobs:
+  align:
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-latest
+    # One alignment task at a time — concurrent runs would race to create it.
+    concurrency:
+      group: sdd-align-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Resolve configuration
+        if: (inputs.spec_repo || vars.SDD_SPEC_REPO) == '' || (inputs.project || vars.SDD_SPEC_PROJECT) == ''
+        run: |
+          echo "::error::Set the SDD_SPEC_REPO and SDD_SPEC_PROJECT repository variables (or pass the spec_repo / project inputs)."
+          exit 1
+
+      - name: Mint GitHub App token
+        id: app
+        if: vars.SDD_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SDD_APP_ID }}
+          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Checkout spec repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+          path: spec-repo
+          # Full history: alignment walks --first-parent between two commits.
+          fetch-depth: 0
+
+      - name: File or refresh the alignment task
+        uses: letsdev-it/sdd-workflows/actions/sdd-align@main
+        env:
+          SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          SPEC_PROJECT: ${{ inputs.project || vars.SDD_SPEC_PROJECT }}
+          OFFSET_FILE: ${{ inputs.offset_file || '.sdd/spec-offset' }}
+          DRY_RUN: ${{ (inputs.dry_run && 'true') || 'false' }}
+          LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-5' }}
+          LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
+        with:
+          # The App/PAT only checks out the private spec repo above; issues are
+          # written here with the caller's job-scoped token.
+          github-token: ${{ github.token }}

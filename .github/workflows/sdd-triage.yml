@@ -1,0 +1,73 @@
+# SDD triage — reusable, for SPEC repos. A1, the spec drafter.
+#
+# Routing is MECHANICAL, by issue type label; the model only produces content,
+# never routing decisions.
+#
+#   spec-feature / spec-chore  → branch spec/<N> + PR with `Refs #N`
+#       llm-spec (form default): drafts the proposed spec change; the owner
+#                     edits the branch, merge = confirmation
+#       craft-spec (form choice or label): scaffold only — empty commit +
+#                     draft PR, no generated content
+#
+# There is no code-* intake here. With one code repository per spec there is
+# nothing to route, and this workflow never touches anything outside the spec
+# repo — which is why its App token is scoped to a single repository.
+#
+# The drafting mode is declared AT CREATION (a form dropdown parsed from the
+# issue body), so every issue event is a complete, explicit act and is
+# processed immediately. An hourly sweep in the caller is only a safety net.
+# All state lives in labels, so a restart simply re-scans.
+
+name: sdd-triage
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: Only report what would happen; write nothing
+        type: boolean
+        default: false
+    secrets:
+      SDD_TASKS_TOKEN:
+        required: false
+      SDD_APP_PRIVATE_KEY:
+        required: false
+      SDD_LLM_API_KEY:
+        required: false
+
+jobs:
+  triage:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sdd-triage-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Mint GitHub App token
+        id: app
+        if: vars.SDD_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SDD_APP_ID }}
+          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Checkout the spec repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+
+      - name: Triage intake issues
+        uses: letsdev-it/sdd-workflows/actions/sdd-triage@main
+        env:
+          DRY_RUN: ${{ (inputs.dry_run && 'true') || 'false' }}
+          LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-5' }}
+          LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
+          HAS_WRITE_IDENTITY: ${{ steps.app.outputs.token != '' || secrets.SDD_TASKS_TOKEN != '' }}
+        with:
+          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}

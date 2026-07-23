@@ -1,0 +1,75 @@
+# SDD alignment completion — reusable, for code repos.
+#
+# Called on push to main, path-filtered to the watermark file. When
+# .sdd/spec-offset reaches an open alignment task's target, this closes the
+# task and the umbrella issues of the consumed range in the spec repo.
+#
+# Done is defined by the watermark and nothing else. The alignment task is a
+# goal that may be split across any number of PRs, so no `Closes #N` convention
+# could carry this: whoever finishes bumps the offset in the final PR, and that
+# single fact ends the cycle.
+#
+# This is the only write that crosses the repo boundary, and it runs in the
+# allowed direction — the consumer knows the producer, never the reverse.
+
+name: sdd-align-done
+
+on:
+  workflow_call:
+    inputs:
+      spec_repo:
+        description: Spec repo owner/name; defaults to SDD_SPEC_REPO
+        type: string
+      offset_file:
+        description: Path to the watermark file in this repo
+        type: string
+        default: .sdd/spec-offset
+    secrets:
+      SDD_TASKS_TOKEN:
+        required: false
+      SDD_APP_PRIVATE_KEY:
+        required: false
+
+jobs:
+  align-done:
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve spec repo
+        if: (inputs.spec_repo || vars.SDD_SPEC_REPO) == ''
+        run: |
+          echo "::error::Set the SDD_SPEC_REPO repository variable (owner/name of the spec repo) or pass the spec_repo input."
+          exit 1
+
+      - name: Mint GitHub App token
+        id: app
+        if: vars.SDD_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SDD_APP_ID }}
+          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Checkout spec repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+          path: spec-repo
+          # Full history: reaching the target is an ancestry question.
+          fetch-depth: 0
+
+      - name: Close what the watermark has caught up with
+        uses: letsdev-it/sdd-workflows/actions/sdd-align-done@main
+        env:
+          SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          OFFSET_FILE: ${{ inputs.offset_file || '.sdd/spec-offset' }}
+        with:
+          # Umbrella closing writes into the spec repo, so this needs the
+          # cross-repo identity rather than the caller's job token.
+          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}

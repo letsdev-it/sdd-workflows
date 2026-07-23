@@ -12,7 +12,9 @@ Classify the diff into exactly one verdict:
 - `conforms` — it does not affect externally observable behavior (refactors,
   tests, tooling, tech-spec/docs), or it implements or moves the code toward
   behavior the current spec describes. Implementing missing specified
-  functionality from scratch conforms.
+  functionality from scratch conforms, and so does implementing only PART of
+  it: a repository catches up with its contract over many pull requests, and
+  this check never asks whether the work is finished.
 - `beyond_spec` — it introduces or alters externally observable behavior that
   the current spec does not describe.
 - `against_spec` — it results in behavior contradicting the current spec.

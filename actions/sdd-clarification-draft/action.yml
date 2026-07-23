@@ -1,0 +1,16 @@
+name: SDD clarification drafting
+description: Turn a clarification request on an umbrella issue into a focused spec pull request
+inputs:
+  github-token:
+    description: Token that can push branches and open pull requests in this repo
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Draft clarification spec PR
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const run = require('${{ github.action_path }}/draft.js');
+          await run({ github, context, core });

@@ -1,3 +1,13 @@
+# SDD drift audit — reusable, for code repos. The safety net.
+#
+# Compares the CURRENT code with the CURRENT contract and files what it finds:
+# a code bug is code work and stays in this repository; a gap in the contract
+# is intake for the spec repo, which no longer accepts code-* issue types.
+#
+# It also reports the alignment distance, so that a repository which is merely
+# behind is not mistaken for one that has drifted — being behind means work is
+# already queued as an alignment task.
+
 name: sdd-drift-audit
 
 on:
@@ -6,6 +16,13 @@ on:
       spec_repo:
         description: Spec repo owner/name; defaults to SDD_SPEC_REPO
         type: string
+      project:
+        description: Project directory in the spec repo; defaults to SDD_SPEC_PROJECT
+        type: string
+      offset_file:
+        description: Path to the watermark file inside the code checkout
+        type: string
+        default: code-repo/.sdd/spec-offset
     secrets:
       SDD_TASKS_TOKEN:
         required: false
@@ -18,9 +35,15 @@ jobs:
   audit:
     permissions:
       contents: read
-      issues: read
+      issues: write
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve configuration
+        if: (inputs.spec_repo || vars.SDD_SPEC_REPO) == '' || (inputs.project || vars.SDD_SPEC_PROJECT) == ''
+        run: |
+          echo "::error::Set the SDD_SPEC_REPO and SDD_SPEC_PROJECT repository variables (or pass the spec_repo / project inputs)."
+          exit 1
+
       - name: Mint GitHub App token
         id: app
         if: vars.SDD_APP_ID != ''
@@ -41,13 +64,18 @@ jobs:
           repository: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
           token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
           path: spec-repo
+          # Full history: the alignment distance is a --first-parent walk.
+          fetch-depth: 0
 
-      - name: Audit code against authoritative spec
+      - name: Audit code against the authoritative spec
         uses: letsdev-it/sdd-workflows/actions/sdd-drift-audit@main
         env:
           SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          SPEC_PROJECT: ${{ inputs.project || vars.SDD_SPEC_PROJECT }}
+          OFFSET_FILE: ${{ inputs.offset_file || 'code-repo/.sdd/spec-offset' }}
           LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-5' }}
           LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
         with:
+          # Writes issues in BOTH repos, so this needs the cross-repo identity.
           github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}

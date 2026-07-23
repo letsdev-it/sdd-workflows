@@ -1,0 +1,16 @@
+name: SDD clarification forwarding
+description: Forward a product question from an alignment task to its umbrella issue in the spec repo
+inputs:
+  github-token:
+    description: Token that can label issues here and comment in the spec repo
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Forward product clarification to the umbrella
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const run = require('${{ github.action_path }}/clarify.js');
+          await run({ github, context, core });
