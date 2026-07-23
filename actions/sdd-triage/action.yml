@@ -1,0 +1,16 @@
+name: SDD triage implementation
+description: Turn a contract intake issue into a spec branch and pull request (A1)
+inputs:
+  github-token:
+    description: Token that can push branches and open pull requests in this repo
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Triage intake issues
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const run = require('${{ github.action_path }}/triage.js');
+          await run({ github, context, core });

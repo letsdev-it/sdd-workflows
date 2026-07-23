@@ -1,0 +1,63 @@
+# SDD clarification drafting — reusable, for SPEC repos.
+#
+# An executor working an alignment task hits a question the contract does not
+# answer, and sdd-clarification (code side) forwards it here as a marked
+# comment on the umbrella issue. This drafts a spec PR that answers it, so the
+# answer enters the contract instead of being decided in the code.
+#
+# If the question needs a product decision that cannot be derived from the
+# existing spec, it refuses and says so on the issue — inventing contract is
+# exactly what SDD exists to prevent.
+
+name: sdd-clarification-draft
+
+on:
+  workflow_call:
+    inputs:
+      umbrella:
+        description: Umbrella issue number (manual dispatch only)
+        type: string
+      comment_id:
+        description: Clarification request comment id (manual dispatch only)
+        type: string
+    secrets:
+      SDD_TASKS_TOKEN:
+        required: false
+      SDD_APP_PRIVATE_KEY:
+        required: false
+      SDD_LLM_API_KEY:
+        required: false
+
+jobs:
+  draft:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token
+        id: app
+        if: vars.SDD_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SDD_APP_ID }}
+          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Checkout the spec repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+
+      - name: Draft clarification spec PR
+        uses: letsdev-it/sdd-workflows/actions/sdd-clarification-draft@main
+        env:
+          UMBRELLA_INPUT: ${{ inputs.umbrella }}
+          COMMENT_ID_INPUT: ${{ inputs.comment_id }}
+          LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
+          LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-5' }}
+          LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
+        with:
+          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}

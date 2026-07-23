@@ -1,0 +1,16 @@
+name: SDD alignment implementation
+description: File or refresh the goal-shaped task that brings a code repo up to its product spec
+inputs:
+  github-token:
+    description: Token that can read the spec repo and write issues in the code repo
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: File or refresh the alignment task
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const run = require('${{ github.action_path }}/align.js');
+          await run({ github, context, core });

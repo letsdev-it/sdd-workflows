@@ -1,0 +1,67 @@
+# SDD changelog — reusable, for SPEC repos. The spec repo's only outbound
+# artifact.
+#
+# Called on push to main when a project's spec/ changed. Writes one file per
+# spec commit under <project>/changelog/ and pushes it back. The entry file is
+# the idempotence marker — a missing entry is the only reason to process a
+# commit, so a cancelled or crashed run self-heals on the next push with no
+# duplicates.
+#
+# No model, no cross-repo identity, nothing that names a code repository: this
+# is the boundary of the spec repo's knowledge. Code repos read the result
+# themselves via sdd-align.
+#
+# The caller's path filter must exclude changelog/, or the commit this pushes
+# retriggers it.
+
+name: sdd-changelog
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: List the entries that would be written; write nothing
+        type: boolean
+        default: false
+    secrets:
+      SDD_TASKS_TOKEN:
+        required: false
+      SDD_APP_PRIVATE_KEY:
+        required: false
+
+jobs:
+  changelog:
+    permissions:
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    # Serialize: concurrent runs race on the push, and the loser rebases onto
+    # entries it has just written itself.
+    concurrency:
+      group: sdd-changelog-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Mint GitHub App token
+        id: app
+        if: vars.SDD_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SDD_APP_ID }}
+          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
+          # This repo only — the changelog never reaches outside it.
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Checkout the spec repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
+          persist-credentials: true
+
+      - name: Publish changelog entries
+        uses: letsdev-it/sdd-workflows/actions/sdd-changelog@main
+        env:
+          DRY_RUN: ${{ (inputs.dry_run && 'true') || 'false' }}
+          TARGET_BRANCH: main
+        with:
+          github-token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}

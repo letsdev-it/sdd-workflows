@@ -8,18 +8,29 @@
 # code-PR time; no link metadata is required (provenance is reported as
 # context only). Verdict:
 #   - conforms      → PASS: no externally-observable change, or the diff
-#                     implements / moves the code toward the current spec
+#                     implements / moves the code toward the current spec.
+#                     PARTIAL implementation conforms: a repository catches up
+#                     over many PRs and this check never asks "is it finished?"
 #   - beyond_spec   → FAIL: introduces observable behavior the spec does
 #                     not describe — route it through the spec repo first
 #   - against_spec  → FAIL: resulting behavior contradicts the current
-#                     spec (e.g. the spec moved on since the task was
-#                     created) — implement the newest spec state
-# Also emits a NON-BLOCKING tech-spec advisory: a warning when the
-# diff looks architectural and no tech-spec/docs file was touched.
+#                     spec (e.g. the spec moved on while the PR was open) —
+#                     implement the newest spec state
 #
-# Requirements in the calling code repo: vars.SDD_APP_ID +
-# secrets.SDD_APP_PRIVATE_KEY (or secrets.SDD_TASKS_TOKEN) — must be able to
-# READ the spec repo; secrets.SDD_LLM_API_KEY.
+# Two NON-BLOCKING advisories ride along: a tech-spec nudge when the diff looks
+# architectural and no documentation moved, and a drift note when this repo's
+# watermark is behind the published spec. Catching up is the alignment task's
+# job, never an individual PR's.
+#
+# The project is resolved from vars.SDD_SPEC_PROJECT, declared here in the code
+# repo. It used to be found by scanning every zoltan.json for a repos[] entry
+# naming the caller — the last place a code repo's identity had to be written
+# down inside the spec repo.
+#
+# Requirements in the calling code repo: vars.SDD_SPEC_REPO,
+# vars.SDD_SPEC_PROJECT, vars.SDD_APP_ID + secrets.SDD_APP_PRIVATE_KEY (or
+# secrets.SDD_TASKS_TOKEN) able to READ the spec repo, and
+# secrets.SDD_LLM_API_KEY.
 
 name: sdd-conformance
 
@@ -27,10 +38,15 @@ on:
   workflow_call:
     inputs:
       spec_repo:
-        description: >-
-          The spec repo (owner/name) holding zoltan.json manifests.
-          Defaults to the caller's SDD_SPEC_REPO repository variable.
+        description: Spec repo owner/name; defaults to SDD_SPEC_REPO
         type: string
+      project:
+        description: Project directory in the spec repo; defaults to SDD_SPEC_PROJECT
+        type: string
+      offset_file:
+        description: Path to the watermark file in this repo
+        type: string
+        default: .sdd/spec-offset
     secrets:
       SDD_TASKS_TOKEN:
         required: false
@@ -45,13 +61,12 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
-      statuses: write
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve spec repo
-        if: (inputs.spec_repo || vars.SDD_SPEC_REPO) == ''
+      - name: Resolve configuration
+        if: (inputs.spec_repo || vars.SDD_SPEC_REPO) == '' || (inputs.project || vars.SDD_SPEC_PROJECT) == ''
         run: |
-          echo "::error::Set the SDD_SPEC_REPO repository variable (owner/name of the spec repo) or pass the spec_repo input."
+          echo "::error::Set the SDD_SPEC_REPO and SDD_SPEC_PROJECT repository variables (or pass the spec_repo / project inputs). A code repo with no declared project cannot be checked against a contract."
           exit 1
 
       - name: Mint GitHub App token
@@ -63,61 +78,31 @@ jobs:
           private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
       - name: Checkout spec repo
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
           token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
           path: spec-repo
+          # Full history: the drift advisory measures a --first-parent distance.
+          fetch-depth: 0
 
       - name: Judge conformance against the product spec
         uses: letsdev-it/sdd-workflows/actions/sdd-conformance@main
         env:
           SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
+          SPEC_PROJECT: ${{ inputs.project || vars.SDD_SPEC_PROJECT }}
+          OFFSET_FILE: ${{ inputs.offset_file || '.sdd/spec-offset' }}
           LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
           LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-5' }}
           LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
         with:
           # The App/PAT is only for checking out the private spec repo above.
-          # Local PR/issues/status APIs must use the caller token so its
-          # job-scoped `statuses: write` permission is honored.
-          github-token: ${{ github.token }}
-
-  sdd-task-fulfillment:
-    permissions:
-      contents: read
-      issues: read
-      pull-requests: read
-    runs-on: ubuntu-latest
-    steps:
-      - name: Resolve spec repo
-        if: (inputs.spec_repo || vars.SDD_SPEC_REPO) == ''
-        run: |
-          echo "::error::Set the SDD_SPEC_REPO repository variable (owner/name of the spec repo) or pass the spec_repo input."
-          exit 1
-
-      - name: Mint GitHub App token
-        id: app
-        if: vars.SDD_APP_ID != ''
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.SDD_APP_ID }}
-          private-key: ${{ secrets.SDD_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
-      - name: Checkout spec repo
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
-          token: ${{ steps.app.outputs.token || secrets.SDD_TASKS_TOKEN || github.token }}
-          path: spec-repo
-
-      - name: Judge fulfillment of linked SDD tasks
-        uses: letsdev-it/sdd-workflows/actions/sdd-task-fulfillment@main
-        env:
-          SPEC_REPO: ${{ inputs.spec_repo || vars.SDD_SPEC_REPO }}
-          LLM_BASE_URL: ${{ vars.SDD_LLM_BASE_URL || 'https://openrouter.ai/api/v1' }}
-          LLM_MODEL: ${{ vars.SDD_LLM_MODEL || 'anthropic/claude-sonnet-5' }}
-          LLM_API_KEY: ${{ secrets.SDD_LLM_API_KEY }}
-        with:
+          # Local PR/issue APIs use the caller token so its job-scoped
+          # permissions are what actually applies.
           github-token: ${{ github.token }}
